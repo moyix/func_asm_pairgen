@@ -31,6 +31,10 @@ def get_dwarf_info(exe, srcdir):
                     cu['comp_dir'] = line.split('"')[1].strip()
                 elif line.startswith('DW_AT_language'):
                     cu['language'] = line.split('(')[1][:-1].strip()
+
+            if 'name' not in cu or 'comp_dir' not in cu:
+                continue
+
             # Try to resolve the source file name
             fname = Path(cu['name'])
             compdir = Path(cu['comp_dir'])
