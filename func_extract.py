@@ -27,6 +27,38 @@ from tabulate import tabulate
 # IPython debugging
 import IPython
 
+# Don't proceed if we have less than 16GB of RAM.
+MEM_CEILING = 16*1024*1024*1024
+
+# Check if we have enough RAM and CPU, and if not, wait a bit
+def wait_for_resources():
+    # Get free memory
+    def get_free_mem():
+        # Get MemTotal, MemFree, Buffers, and Cached
+        MemTotal = 0
+        MemFree = 0
+        Buffers = 0
+        Cached = 0
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('MemFree'):
+                    MemFree = int(line.split()[1])
+                elif line.startswith('MemTotal'):
+                    MemTotal = int(line.split()[1])
+                elif line.startswith('Buffers'):
+                    Buffers = int(line.split()[1])
+                elif line.startswith('Cached'):
+                    Cached = int(line.split()[1])
+        FreeKB = MemTotal - (MemFree + Buffers + Cached)
+        return FreeKB * 1024
+    # Get load avg
+    def get_load_avg():
+        with open('/proc/loadavg') as f:
+            return float(f.read().split()[0])
+    while get_free_mem() < MEM_CEILING or get_load_avg() > 100:
+        print("System overloaded, waiting for resources...")
+        time.sleep(5)
+
 # Infinitely expanding defaultdict
 expanding_dict = lambda: defaultdict(expanding_dict)
 
@@ -309,6 +341,7 @@ if args.mode == 'binary_comments':
         bin_src[b] = {}
         tm.start('get_source_bodies')
         print(f"Parsing source files for {b}...")
+        wait_for_resources()
         def src_body_helper(src):
             src_bodies = get_source_bodies(src,td)
             return src, src_bodies
