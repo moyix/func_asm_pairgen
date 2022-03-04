@@ -133,6 +133,13 @@ def iter_ast(cursor):
     for child in cursor.get_children():
         yield from iter_ast(child)
 
+def kind(cursor):
+    try:
+        return cursor.kind
+    except ValueError:
+        # This is a bug in clang.
+        return None
+
 # Wrap this with preserve_cwd so that we can change directory with
 # impunity.
 @preserve_cwd
@@ -147,8 +154,8 @@ def get_source_bodies(src, td):
         return source_bodies
     main_tu = tu
     function_defs = [ c for c in iter_ast(tu.cursor)
-                        if c.kind == CursorKind.FUNCTION_DECL or
-                        c.kind == CursorKind.CXX_METHOD
+                        if kind(c) == CursorKind.FUNCTION_DECL or
+                           kind(c) == CursorKind.CXX_METHOD
                     ]
     filemap = defaultdict(list)
     for f in function_defs:
