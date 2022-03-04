@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 from bisect import bisect_right
+
+import humanize
 from clang.cindex import Config
 from source_extractor import get_source_bodies
 from collections import defaultdict
@@ -49,15 +51,25 @@ def wait_for_resources():
                     Buffers = int(line.split()[1])
                 elif line.startswith('Cached'):
                     Cached = int(line.split()[1])
-        FreeKB = MemTotal - (MemFree + Buffers + Cached)
+        MemUsed = MemTotal - (MemFree + Buffers + Cached)
+        FreeKB = MemTotal - MemUsed
         return FreeKB * 1024
     # Get load avg
     def get_load_avg():
         with open('/proc/loadavg') as f:
             return float(f.read().split()[0])
-    while get_free_mem() < MEM_CEILING or get_load_avg() > 100:
-        print("System overloaded, waiting for resources...")
-        time.sleep(5)
+    while True:
+        mem = get_free_mem()
+        load = get_load_avg()
+        if mem < MEM_CEILING:
+            memstr = humanize.naturalsize(mem, binary=True)
+            print(f"System overloaded (free mem = {memstr}), waiting for resources...")
+            time.sleep(5)
+        elif load > 100:
+            print(f"System overloaded (load avg = {load}), waiting for resources...")
+            time.sleep(5)
+        else:
+            break
 
 # Infinitely expanding defaultdict
 expanding_dict = lambda: defaultdict(expanding_dict)
