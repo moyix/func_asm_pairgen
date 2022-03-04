@@ -19,12 +19,15 @@ def get_dwarf_info(exe, srcdir):
     rename_cache = {}
     current_cu = None
     i = 0
-    while i < len(lines):
+    MAX_LINES = len(lines)
+    while i < MAX_LINES:
         line = lines[i].strip()
         if line.endswith('DW_TAG_compile_unit'):
             cu = {}
             while line:
                 i += 1
+                if i >= MAX_LINES:
+                    break
                 line = lines[i].strip()
                 if line.startswith('DW_AT_name'):
                     cu['name'] = line.split('"')[1].strip()
@@ -61,6 +64,8 @@ def get_dwarf_info(exe, srcdir):
             func = {}
             while line:
                 i += 1
+                if i >= MAX_LINES:
+                    break
                 line = lines[i].strip()
                 try:
                     if line.startswith('DW_AT_name'):
