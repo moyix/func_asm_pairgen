@@ -239,7 +239,14 @@ if args.mode == 'binary_comments':
             elf = ELFFile(open(b, 'rb'))
         except ELFError:
             continue
-        if not elf.has_dwarf_info(): continue
+        # Skip binaries that don't have DWARF info
+        if not elf.has_dwarf_info():
+            print("no DWARF info")
+            continue
+        # Skip binaries that aren't x86-64
+        if elf.get_machine_arch() != 'x64':
+            print("Not x86-64")
+            continue
         build_id = get_build_id(elf)
         if build_id in seen_buildids:
             print(f"Already seen, skipping.")
