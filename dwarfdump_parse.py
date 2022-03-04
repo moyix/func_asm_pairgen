@@ -8,6 +8,7 @@ import json
 import sys
 
 def get_dwarf_info(exe, srcdir):
+    srcdir = str(srcdir)
     src = Path(srcdir)
     try:
         output = subprocess.check_output(['llvm-dwarfdump-14', exe]).decode('utf-8')
