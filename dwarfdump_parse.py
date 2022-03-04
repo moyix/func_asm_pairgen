@@ -59,13 +59,13 @@ def get_dwarf_info(exe, srcdir):
             compile_units.append(cu)
             current_cu = compile_units[-1]
         elif line.endswith('DW_TAG_subprogram'):
-            # Skip parsing if we're outside a CU (or if the CU was invalid)
-            if not current_cu:
-                continue
             func = {}
             while line:
                 i += 1
                 if i >= MAX_LINES:
+                    break
+                # Skip parsing if we're outside a CU (or if the CU was invalid)
+                if not current_cu:
                     break
                 line = lines[i].strip()
                 try:
