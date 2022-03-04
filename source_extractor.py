@@ -6,7 +6,10 @@ from collections import defaultdict
 from operator import itemgetter
 import functools
 import sys
+from pathlib import Path
 import IPython
+
+n = os.path.normpath
 
 # Manual path to the libclang.so.
 LIBCLANG_PATH= '/usr/lib/llvm-14/lib/libclang-14.so.1'
@@ -98,7 +101,7 @@ def try_parse(src, compdb):
         args = tidy_args(cmd)
         try:
             index = clang.cindex.Index.create()
-            #print("Try parsing", src, "with", args, file=sys.stderr)
+            # print("Try parsing", src, "with:\n" + " ".join(args), file=sys.stderr)
             tu = index.parse(src, args)
             for diag in tu.diagnostics:
                 if diag.severity >= 3:
@@ -125,6 +128,11 @@ def header_parse(src):
 #       OUT A COMPILATION COMMAND!
 parsed_source_cache = {}
 
+def iter_ast(cursor):
+    yield cursor
+    for child in cursor.get_children():
+        yield from iter_ast(child)
+
 # Wrap this with preserve_cwd so that we can change directory with
 # impunity.
 @preserve_cwd
@@ -138,7 +146,7 @@ def get_source_bodies(src, td):
         parsed_source_cache[src] = source_bodies
         return source_bodies
     main_tu = tu
-    function_defs = [ c for c in tu.cursor.get_children()
+    function_defs = [ c for c in iter_ast(tu.cursor)
                         if c.kind == CursorKind.FUNCTION_DECL or
                         c.kind == CursorKind.CXX_METHOD
                     ]
@@ -147,22 +155,25 @@ def get_source_bodies(src, td):
         name = get_name(f)
         extent = f.extent
         if not name: continue
-        filemap[extent.start.file.name].append( (extent.start.line, extent.end.line, name) )
+        filemap[n(extent.start.file.name)].append( (extent.start.line, extent.end.line, name) )
         if not f.is_definition(): continue
         #print(f"{f.spelling}: {extent.start.file.name} {extent.start.line}:{extent.start.column} - {extent.end.file.name} {extent.end.line}:{extent.end.column}")
         if extent.start.file.name != extent.end.file.name:
             continue
-        lines = open(extent.start.file.name).readlines()
+        try:
+            lines = open(extent.start.file.name).readlines()
+        except UnicodeDecodeError:
+            lines = open(extent.start.file.name, encoding='latin1').readlines()
         body = lines[extent.start.line-1:extent.end.line]
         body[0] = body[0][extent.start.column-1:]
         body[-1] = body[-1][:extent.end.column]
         body = ''.join(body)
         if name in source_bodies:
-            print("WARNING: Function already found in source_bodies:", name, extent.start.file.name)
+            print("WARNING: Function already found in source_bodies:", name, extent.start.file.name, file=sys.stderr)
             continue
         source_bodies[name] = {}
         source_bodies[name]['body'] = body
-        source_bodies[name]['file'] = extent.start.file.name
+        source_bodies[name]['file'] = n(extent.start.file.name)
         source_bodies[name]['start'] = extent.start.line
         source_bodies[name]['end'] = extent.end.line
         source_bodies[name]['comments'] = []
@@ -191,7 +202,7 @@ def get_source_bodies(src, td):
     for p, tu in all_tu.items():
         for t in tu.cursor.get_tokens():
             if t.kind == TokenKind.COMMENT:
-                comment_file = t.extent.end.file.name
+                comment_file = n(t.extent.end.file.name)
                 comment_line = t.extent.end.line
                 comment_line_start = t.extent.start.line
                 i = bisect_right(filelines[comment_file], comment_line) - 1
@@ -208,7 +219,7 @@ def get_source_bodies(src, td):
                     if abs(f_start - comment_line) <= COMMENT_DISTANCE_THRESHOLD:
                         if f_name in source_bodies:
                             source_bodies[f_name]['comments'].append((comment_file, comment_line_start, t.spelling))
-    # IPython.embed()
+    #IPython.embed(colors='neutral')
     parsed_source_cache[src] = source_bodies
     return source_bodies
 

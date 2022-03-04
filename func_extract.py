@@ -23,7 +23,7 @@ import os
 import sys
 import tempfile
 from hashlib import sha1
-import tabulate
+from tabulate import tabulate
 # IPython debugging
 import IPython
 
@@ -42,10 +42,9 @@ class MiniTimer:
         self.totals[name] += self.tracked[name]
         del self.tracked[name]
     def print_totals(self):
-        all_times = sorted(self.totals.items(), key=itemgetter(1), reverse=True)
-        print(f'{"Time":>10} {"Name":<20}')
-        for name, time in all_times:
-            print(f"{time:>10.2f} {name:<20}")
+        all_times = [(v,k) for k,v in self.totals.items()]
+        all_times = sorted(all_times, key=itemgetter(0), reverse=True)
+        print(tabulate(all_times, headers=["Time", "Name"]))
 
 CACHE_DWARF = True
 
@@ -210,8 +209,9 @@ tm.start('copy_source')
 src = ARCHIVE_PATH / pkg_name
 dest = ROOT / pkg_name
 if not dest.exists():
+    dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"Copying over source files from {src} to {dest}")
-    subprocess.call(['cp', '-a', str(src), str(dest)])
+    subprocess.check_call(['cp', '-a', str(src), str(dest)])
 SOURCE_PATH = ROOT / pkg_name
 tm.end('copy_source')
 
@@ -229,12 +229,17 @@ if args.mode == 'binary_comments':
     # Get a list of functions and source files from the binary. Uses DWARF info.
     bin_functions = defaultdict(list)
     bin_cus = defaultdict(list)
+    binary_worklist = []
     for b in binaries:
         # Skip debug-only binaries and symlinks
         if '.build-id' in b or b.endswith('.debug') or os.path.islink(b):
             continue
         print(f"Getting DWARF info for {b}...", end='')
-        elf = ELFFile(open(b, 'rb'))
+        try:
+            elf = ELFFile(open(b, 'rb'))
+        except ELFError:
+            continue
+        if not elf.has_dwarf_info(): continue
         build_id = get_build_id(elf)
         if build_id in seen_buildids:
             print(f"Already seen, skipping.")
@@ -247,6 +252,7 @@ if args.mode == 'binary_comments':
             dwarf = get_dwarf_info(b, SOURCE_PATH)
             if CACHE_DWARF: json.dump(dwarf, open(f'{h}.json', 'w'))
         else:
+            print(f"Loading cached DWARF info for {b} from {h}.json", file=sys.stderr)
             dwarf = json.load(open(f'{h}.json'))
         tm.end('get_dwarf_info')
         cus = dwarf
@@ -379,6 +385,7 @@ if args.mode == 'binary_comments':
             grand_found += found
             grand_total += total
             rows.append( [brel, curel, found, total] )
+    print(tabulate(rows, headers))
     print(f"Grand Total: {grand_found:5} / {grand_total:5}")
 
     tm.print_totals()

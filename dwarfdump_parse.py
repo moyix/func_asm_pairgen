@@ -5,10 +5,15 @@ import os
 from pathlib import Path
 import subprocess
 import json
+import sys
 
 def get_dwarf_info(exe, srcdir):
     src = Path(srcdir)
-    output = subprocess.check_output(['llvm-dwarfdump-14', exe]).decode('utf-8')
+    try:
+        output = subprocess.check_output(['llvm-dwarfdump-14', exe]).decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        print('llvm-dwarfdump-14 failed:', e, file=sys.stderr)
+        return []
     lines = output.splitlines()
     compile_units = []
     rename_cache = {}
@@ -34,7 +39,7 @@ def get_dwarf_info(exe, srcdir):
             elif (src/fname).exists():
                 cu['source'] = str((src/fname).resolve())
             else:
-                cu['source'] = cu['name']
+                cu['source'] = str(Path(cu['name']).resolve())
             cu['functions'] = []
             if 'language' not in cu:
                 cu['language'] = 'DW_LANG_C' # Bad assumption?
@@ -71,8 +76,8 @@ def get_dwarf_info(exe, srcdir):
             else:
                 old_fname = func['decl_file']
                 fname = Path(func['decl_file'])
-                if fname.is_absolute(): # Leave absolute paths alone
-                    func['decl_file'] = str(fname)
+                if fname.is_absolute(): # Leave absolute paths alone but normalize them
+                    func['decl_file'] = str(fname.resolve())
                 elif (src/fname).exists(): # Simple relative path
                     func['decl_file'] = str((src/fname).resolve())
                 else:
@@ -103,5 +108,6 @@ if __name__  == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Parse DWARF info from an executable')
     parser.add_argument('exe', help='Executable to parse')
+    parser.add_argument('srcdir', help='Source directory')
     args = parser.parse_args()
-    print(json.dumps(get_dwarf_info(args.exe)))
+    print(json.dumps(get_dwarf_info(args.exe, args.srcdir)))
