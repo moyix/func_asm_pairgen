@@ -17,6 +17,7 @@ def get_dwarf_info(exe, srcdir):
     lines = output.splitlines()
     compile_units = []
     rename_cache = {}
+    current_cu = None
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -32,7 +33,11 @@ def get_dwarf_info(exe, srcdir):
                 elif line.startswith('DW_AT_language'):
                     cu['language'] = line.split('(')[1][:-1].strip()
 
-            if 'name' not in cu or 'comp_dir' not in cu:
+            if 'comp_dir' not in cu:
+                cu['comp_dir'] = srcdir
+
+            if 'name' not in cu:
+                current_cu = None
                 continue
 
             # Try to resolve the source file name
@@ -48,7 +53,11 @@ def get_dwarf_info(exe, srcdir):
             if 'language' not in cu:
                 cu['language'] = 'DW_LANG_C' # Bad assumption?
             compile_units.append(cu)
+            current_cu = compile_units[-1]
         elif line.endswith('DW_TAG_subprogram'):
+            # Skip parsing if we're outside a CU (or if the CU was invalid)
+            if not current_cu:
+                continue
             func = {}
             while line:
                 i += 1
