@@ -7,6 +7,9 @@ import subprocess
 import json
 import sys
 
+def n(path):
+    return os.path.normpath(path)
+
 def get_dwarf_info(exe, srcdir):
     srcdir = str(srcdir)
     src = Path(srcdir)
@@ -48,11 +51,11 @@ def get_dwarf_info(exe, srcdir):
             fname = Path(cu['name'])
             compdir = Path(cu['comp_dir'])
             if (src/compdir/fname).exists():
-                cu['source'] = str((src/compdir/fname).resolve())
+                cu['source'] = str(n(src/compdir/fname))
             elif (src/fname).exists():
-                cu['source'] = str((src/fname).resolve())
+                cu['source'] = str(n(src/fname))
             else:
-                cu['source'] = str(Path(cu['name']).resolve())
+                cu['source'] = str(n(cu['name']))
             cu['functions'] = []
             if 'language' not in cu:
                 cu['language'] = 'DW_LANG_C' # Bad assumption?
@@ -99,16 +102,16 @@ def get_dwarf_info(exe, srcdir):
                 old_fname = func['decl_file']
                 fname = Path(func['decl_file'])
                 if fname.is_absolute(): # Leave absolute paths alone but normalize them
-                    func['decl_file'] = str(fname.resolve())
+                    func['decl_file'] = str(n(fname))
                 elif (src/fname).exists(): # Simple relative path
-                    func['decl_file'] = str((src/fname).resolve())
+                    func['decl_file'] = str(n(src/fname))
                 else:
                     # Might be relative to the current CU, but broken
                     current_cu = compile_units[-1]
                     try:
                         fname_relative = fname.relative_to(current_cu['comp_dir'])
                         if (src/fname_relative).exists():
-                            func['decl_file'] = str((src/fname_relative).resolve())
+                            func['decl_file'] = str(n(src/fname_relative))
                     except ValueError:
                         # Give up
                         pass
