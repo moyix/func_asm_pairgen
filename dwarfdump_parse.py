@@ -49,18 +49,21 @@ def get_dwarf_info(exe, srcdir):
             while line:
                 i += 1
                 line = lines[i].strip()
-                if line.startswith('DW_AT_name'):
-                    func['friendly_name'] = line.split('"')[1].strip()
-                elif line.startswith('DW_AT_specification'):
-                    func['linkage_name'] = line.split('"')[1].strip()
-                elif line.startswith('DW_AT_low_pc'):
-                    func['low_pc'] = int(line.split('(')[1][:-1], 0)
-                elif line.startswith('DW_AT_high_pc'):
-                    func['high_pc'] = int(line.split('(')[1][:-1], 0)
-                elif line.startswith('DW_AT_decl_file'):
-                    func['decl_file'] = line.split('"')[1].strip()
-                elif line.startswith('DW_AT_linkage_name'):
-                    func['linkage_name'] = line.split('"')[1].strip()
+                try:
+                    if line.startswith('DW_AT_name'):
+                        func['friendly_name'] = line.split('"')[1].strip()
+                    elif line.startswith('DW_AT_specification'):
+                        func['linkage_name'] = line.split('"')[1].strip()
+                    elif line.startswith('DW_AT_low_pc'):
+                        func['low_pc'] = int(line.split('(')[1][:-1], 0)
+                    elif line.startswith('DW_AT_high_pc'):
+                        func['high_pc'] = int(line.split('(')[1][:-1], 0)
+                    elif line.startswith('DW_AT_decl_file'):
+                        func['decl_file'] = line.split('"')[1].strip()
+                    elif line.startswith('DW_AT_linkage_name'):
+                        func['linkage_name'] = line.split('"')[1].strip()
+                except IndexError:
+                    continue
             if 'linkage_name' in func:
                 func['name'] = func['linkage_name']
             elif 'friendly_name' in func:
