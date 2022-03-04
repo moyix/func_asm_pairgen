@@ -212,6 +212,11 @@ def get_source_bodies(src, td):
                 comment_file = n(t.extent.end.file.name)
                 comment_line = t.extent.end.line
                 comment_line_start = t.extent.start.line
+                # Since we're iterating over all tokens here, there may be files
+                # that we never saw when collecting decls. We can just skip these,
+                # since we know the comments can't apply to any known decl.
+                if comment_file not in filelines:
+                    continue
                 i = bisect_right(filelines[comment_file], comment_line) - 1
                 # Either the comment is inside the function, or it is
                 # within a few lines of the next function.
