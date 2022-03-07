@@ -124,10 +124,6 @@ def header_parse(src):
         print(f"WARNING: header parse failed for {src}:", e, file=sys.stderr)
         return None
 
-# TODO: REMOVE THIS AS SOON AS WE ACTUALLY DO SOMETHING SMARTER WITH PICKING
-#       OUT A COMPILATION COMMAND!
-parsed_source_cache = {}
-
 def iter_ast(cursor):
     yield cursor
     for child in cursor.get_children():
@@ -146,11 +142,8 @@ def kind(cursor):
 def get_source_bodies(src, td):
     compdb = clang.cindex.CompilationDatabase.fromDirectory(td)
     source_bodies = {}
-    if src in parsed_source_cache:
-        return parsed_source_cache[src]
     tu = try_parse(src, compdb)
     if tu is None:
-        parsed_source_cache[src] = source_bodies
         return source_bodies
     main_tu = tu
     function_defs = [ c for c in iter_ast(tu.cursor)
@@ -232,7 +225,6 @@ def get_source_bodies(src, td):
                         if f_name in source_bodies:
                             source_bodies[f_name]['comments'].append((comment_file, comment_line_start, t.spelling))
     #IPython.embed(colors='neutral')
-    parsed_source_cache[src] = source_bodies
     return source_bodies
 
 if __name__ == "__main__":
