@@ -11,7 +11,7 @@ def scan_dir(dir, cache_file=None):
     if cache_file and os.path.exists(cache_file):
         with open(cache_file, 'r') as f:
             for line in f:
-                kind, path = line.split()
+                kind, path = line.split(None,1)
                 kind = kind.strip()
                 path = path.strip()
                 elf_files.append((kind, path))
