@@ -10,7 +10,6 @@ from dwarfdump_parse import get_dwarf_info
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import NoteSection
 from elftools.common.exceptions import ELFError
-import multiprocessing as mp
 import subprocess
 import time
 from operator import itemgetter
@@ -29,8 +28,8 @@ from tabulate import tabulate
 # IPython debugging
 import IPython
 
-# Don't proceed if we have less than 16GB of RAM.
-MEM_CEILING = 16*1024*1024*1024
+# Don't proceed if we have less than 64GB of RAM.
+MEM_CEILING = 64*1024*1024*1024
 
 # Check if we have enough RAM and CPU, and if not, wait a bit
 def wait_for_resources():
@@ -90,7 +89,7 @@ class MiniTimer:
         all_times = sorted(all_times, key=itemgetter(0), reverse=True)
         print(tabulate(all_times, headers=["Time", "Name"]))
 
-CACHE_DWARF = True
+CACHE_DWARF = False
 
 def make_relative(path, root):
     try:
@@ -347,80 +346,48 @@ if args.mode == 'binary_comments':
     nbins_after = len(binaries)
     print(f"Threw away {nbins_before - nbins_after} binaries with no functions/CUs")
 
+    bincu_stats = expanding_dict()
+    outfile = open(args.output, 'w')
+
     # Parse the source for each CU
-    bin_src = {}
     for b in bin_cus:
-        bin_src[b] = {}
         tm.start('get_source_bodies')
         print(f"Parsing source files for {b}...")
-        wait_for_resources()
-        def src_body_helper(src):
-            src_bodies = get_source_bodies(src,td)
-            return src, src_bodies
-        sources_set = set([cu['source'] for cu in bin_cus[b]])
-        sources = [cu['source'] for cu in bin_cus[b] if os.path.exists(cu['source'])]
-        with mp.Pool(mp.cpu_count()) as pool:
-            results = pool.map(src_body_helper, sources)
-        for src, bodies in results:
-            bin_src[b][src] = bodies
-            sources_set.remove(src)
-        for src in sources_set:
-            print(f"SrcParse {src} NOT FOUND")
+        #wait_for_resources()
+        for cu in bin_cus[b]:
+            cu_src = cu['source']
+            bincu_stats[b][cu_src]['total'] = 0
+            bincu_stats[b][cu_src]['found'] = 0
+            if os.path.exists(cu_src):
+                try:
+                    src_bodies = get_source_bodies(cu_src,td)
+                except Exception:
+                    print(f"Failed to parse {src}")
+                    continue
+                # Do all the matching and write out to the JSON file
+                for decl_file in bin_functions_by_file[b][cu_src]:
+                    for func_name in bin_functions_by_file[b][cu_src][decl_file]:
+                        bincu_stats[b][cu_src]['total'] += 1
+                        bin_func = bin_functions_by_file[b][cu_src][decl_file][func_name]
+                        if func_name in src_bodies and decl_file == src_bodies[func_name]['file']:
+                            bincu_stats[b][cu_src]['found'] += 1
+                            src_func = src_bodies[func_name]
+                            # Merge
+                            bin_func['src_body'] = src_func['body']
+                            comments = []
+                            for fname, line, comment in src_func['comments']:
+                                fname = make_relative(fname, SOURCE_PATH)
+                                comments.append( (fname, line, comment) )
+                            bin_func['src_comments'] = comments
+                            bin_func['src_lines'] = [src_func['start'], src_func['end']]
+                            bin_func['package'] = pkg_name
+                            bin_func['decl_file'] = make_relative(decl_file, SOURCE_PATH)
+                            bin_func['binary'] = make_relative(b, SOURCE_PATH)
+                            print(json.dumps(bin_func), file=outfile)
+            else:
+                print(f"SrcParse {src} NOT FOUND")
         tm.end('get_source_bodies')
-
-    # Debug: print out everything
-    # for b in binaries:
-    #     print("="*20 + f" {b} " + "="*20)
-    #     for func in bin_functions[b]:
-    #         print(f"BIN {func['decl_file']} {func['name']} {func['low_pc']:#x}-{func['high_pc']:#x}")
-    #     for src in bin_src[b]:
-    #         for func in bin_src[b][src]:
-    #             print(f"SRC {src} {func}")
-
-    # This has the same structure as bin_functions_by_file, but comes from parsing
-    # the source files.
-    src_functions_by_file = expanding_dict()
-    for b in bin_src:
-        for cu_src in bin_src[b]:
-            for func_name in bin_src[b][cu_src]:
-                func = bin_src[b][cu_src][func_name]
-                decl_file = func['file']
-                src_functions_by_file[b][cu_src][decl_file][func_name] = func
-
-    bincu_stats = expanding_dict()
-    tm.start('bin_src matching')
-    outfile = open(args.output, 'w')
-    # Write out the JSON
-    for b in binaries:
-        print(f"Writing JSON for {b}...")
-        for cu in bin_functions_by_file[b]:
-            bincu_stats[b][cu]['total'] = 0
-            bincu_stats[b][cu]['found'] = 0
-            for decl_file in bin_functions_by_file[b][cu]:
-                for func_name in bin_functions_by_file[b][cu][decl_file]:
-                    bincu_stats[b][cu]['total'] += 1
-                    bin_func = bin_functions_by_file[b][cu][decl_file][func_name]
-                    # print(f"Looking for {func_name} from {cu} declared in {decl_file}: ", end='')
-                    src_func = src_functions_by_file[b][cu][decl_file][func_name]
-                    if not src_func:
-                        # print("MISSED")
-                        continue
-                    else:
-                        # print("FOUND")
-                        bincu_stats[b][cu]['found'] += 1
-                    bin_func['src_body'] = src_func['body']
-                    comments = []
-                    for fname, line, comment in src_func['comments']:
-                        fname = make_relative(fname, SOURCE_PATH)
-                        comments.append( (fname, line, comment) )
-                    bin_func['src_comments'] = comments
-                    bin_func['src_lines'] = [src_func['start'], src_func['end']]
-                    bin_func['package'] = pkg_name
-                    bin_func['decl_file'] = make_relative(decl_file, SOURCE_PATH)
-                    bin_func['binary'] = make_relative(b, SOURCE_PATH)
-                    print(json.dumps(bin_func), file=outfile)
     outfile.close()
-    tm.end('bin_src matching')
 
     # Print out stats about the binary/CU function matching
     print(f"Bin/CU stats:")
