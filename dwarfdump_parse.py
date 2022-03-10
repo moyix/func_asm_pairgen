@@ -22,12 +22,14 @@ def get_dwarf_info(exe, srcdir):
     compile_units = []
     rename_cache = {}
     current_cu = None
+    incomplete_functions = {}
     i = 0
     MAX_LINES = len(lines)
     while i < MAX_LINES:
         line = lines[i].strip()
         if line.endswith('DW_TAG_compile_unit'):
             cu = {}
+            incomplete_functions = {}
             while line:
                 i += 1
                 if i >= MAX_LINES:
@@ -92,9 +94,17 @@ def get_dwarf_info(exe, srcdir):
                 func['name'] = func['friendly_name']
             else:
                 continue
-            
+
+            # Some functions' information is split across multiple entries
+            if func['name'] in incomplete_functions:
+                func.update(incomplete_functions[func['name']])
+
             # Fix the decl_file
             if 'decl_file' not in func:
+                if func['name'] in incomplete_functions:
+                    incomplete_functions[func['name']].update(func)
+                else:
+                    incomplete_functions[func['name']] = func
                 continue
             if func['decl_file'] in rename_cache:
                 func['decl_file'] = rename_cache[func['decl_file']]
@@ -103,8 +113,6 @@ def get_dwarf_info(exe, srcdir):
                 fname = Path(func['decl_file'])
                 if fname.is_absolute(): # Leave absolute paths alone but normalize them
                     func['decl_file'] = str(n(fname))
-                elif (src/fname).exists(): # Simple relative path
-                    func['decl_file'] = str(n(src/fname))
                 else:
                     # Might be relative to the current CU, but broken
                     current_cu = compile_units[-1]
@@ -112,6 +120,8 @@ def get_dwarf_info(exe, srcdir):
                         fname_relative = fname.relative_to(current_cu['comp_dir'])
                         if (src/fname_relative).exists():
                             func['decl_file'] = str(n(src/fname_relative))
+                        elif (src/fname).exists(): # Simple relative path
+                            func['decl_file'] = str(n(src/fname))
                     except ValueError:
                         # Give up
                         pass
@@ -126,6 +136,13 @@ def get_dwarf_info(exe, srcdir):
                 func['low_pc'] and func['high_pc'] and
                 'decl_file' in func):
                 current_cu['functions'].append(func)
+                if func['name'] in incomplete_functions:
+                    del incomplete_functions[func['name']]
+            else:
+                if func['name'] not in incomplete_functions:
+                    incomplete_functions[func['name']] = func
+                else:
+                    incomplete_functions[func['name']].update(func)
         i += 1
     return compile_units
 
