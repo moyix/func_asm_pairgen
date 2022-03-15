@@ -10,6 +10,9 @@ import sys
 def n(path):
     return os.path.normpath(path)
 
+def ex(path):
+    return os.path.exists(path)
+
 def get_dwarf_info(exe, srcdir):
     srcdir = str(srcdir)
     src = Path(srcdir)
@@ -52,9 +55,9 @@ def get_dwarf_info(exe, srcdir):
             # Try to resolve the source file name
             fname = Path(cu['name'])
             compdir = Path(cu['comp_dir'])
-            if (src/compdir/fname).exists():
+            if ex(src/compdir/fname):
                 cu['source'] = str(n(src/compdir/fname))
-            elif (src/fname).exists():
+            elif ex(src/fname):
                 cu['source'] = str(n(src/fname))
             else:
                 cu['source'] = str(n(cu['name']))
@@ -118,9 +121,9 @@ def get_dwarf_info(exe, srcdir):
                     current_cu = compile_units[-1]
                     try:
                         fname_relative = fname.relative_to(current_cu['comp_dir'])
-                        if (src/fname_relative).exists():
+                        if ex(src/fname_relative):
                             func['decl_file'] = str(n(src/fname_relative))
-                        elif (src/fname).exists(): # Simple relative path
+                        elif ex(src/fname): # Simple relative path
                             func['decl_file'] = str(n(src/fname))
                     except ValueError:
                         # Give up

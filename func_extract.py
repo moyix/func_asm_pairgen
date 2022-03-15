@@ -9,6 +9,7 @@ from elftools.elf.sections import NoteSection
 from elftools.common.exceptions import ELFError
 import subprocess
 import time
+import mmap
 from operator import itemgetter
 from pathlib import Path
 import scan_elf
@@ -163,28 +164,12 @@ def get_build_id(elf):
     return ''
 
 # Get bytes from an ELF file using pyelftools.
-_elf_seg_cache = {}
-def load_bytes_from_elf(b, elf, vaddr, size):
-    if _elf_seg_cache.get(b) is None:
-        _elf_seg_cache[b] = []
-        for segment in elf.iter_segments(type='PT_LOAD'):
-             _elf_seg_cache[b].append( (segment.header.p_vaddr, segment.header.p_memsz, segment) )
-        _elf_seg_cache[b].sort(key=itemgetter(0))
-        addrs = [x[0] for x in _elf_seg_cache[b]]
-        segs = [x[2] for x in _elf_seg_cache[b]]
-        _elf_seg_cache[b] = (addrs, segs)
-    # Binary search for the segment containing the offset.
-    addrs, segs = _elf_seg_cache[b]
-    i = bisect_right(addrs, vaddr)
-    if i == 0:
+def load_bytes_from_elf(bindata, elf, vaddr, size):
+    try:
+        paddr = next(iter(elf.address_offsets(vaddr)))
+    except StopIteration:
         return None
-    seg = segs[i-1]
-    if seg.header.p_vaddr <= vaddr < seg.header.p_vaddr+seg.header.p_memsz:
-        # Read the bytes from the segment.
-        off = vaddr - seg.header.p_vaddr
-        return seg.data()[off:off+size]
-    else:
-        return None
+    return bindata[paddr:paddr+size]
 
 # Helper to launch dwarfdump_parse.py on an array of binaries
 # and collect the outputs.
@@ -206,7 +191,10 @@ def get_dwarf_helper(batch):
             print(f"Loading cached DWARF info for {b} from {h}.json...")
     for i, p in enumerate(procs):
         if p: p.wait()
-        results[i] = json.load(open(hashfiles[i]))
+        try:
+            results[i] = json.load(open(hashfiles[i]))
+        except json.decoder.JSONDecodeError:
+            results[i] = {}
         print(f"Found {len(results[i])} CUs for {batch[i][0]}")
     return results
 
@@ -229,7 +217,10 @@ def get_src_bodies_helper(batch):
             print(f"Loading cached src bodies for {cu_src} from {h}.json...")
     for i, p in enumerate(procs):
         if p: p.wait()
-        results[i] = json.load(open(hashfiles[i]))
+        try:
+            results[i] = json.load(open(hashfiles[i]))
+        except json.decoder.JSONDecodeError:
+            results[i] = {}
         print(f"Found {len(results[i])} source bodies for {batch[i][0]['source']}")
     return results
 
@@ -278,6 +269,7 @@ def binary_comments(args):
         results = get_dwarf_helper(dwarfmpbatch)
         tm.end('get_dwarf_info')
         for dwarf, (b, elf, build_id) in zip(results, dwarfbatch):
+            bindata = mmap.mmap(elf.stream.fileno(), 0, access=mmap.ACCESS_READ)
             cus = dwarf
             if not cus: continue
             if build_id in seen_buildids: continue
@@ -289,7 +281,7 @@ def binary_comments(args):
                 bin_cus[b].append(cu)
                 for func in cu['functions']:
                     # print("Getting function bytes for", func['name'], "...", file=sys.stderr, end='', flush=True)
-                    func_bytes = load_bytes_from_elf(b, elf, func['low_pc'], func['high_pc'] - func['low_pc'])
+                    func_bytes = load_bytes_from_elf(bindata, elf, func['low_pc'], func['high_pc'] - func['low_pc'])
                     if func_bytes is None:
                         # print("failed.", file=sys.stderr)
                         continue
@@ -302,11 +294,8 @@ def binary_comments(args):
             print(f"Found {len(bin_functions[b])} functions in {b}")
             if len(bin_functions[b]) > 0:
                 seen_buildids.add(build_id)
+        bindata.close()
         
-        # Clear this cache now
-        global _elf_seg_cache
-        _elf_seg_cache = {}
-
         # Each CU can have many functions, and each function could come from some
         # other file than the current CU. So our map looks like:
         # binary:            // The binary we're working on
@@ -438,10 +427,7 @@ def main():
     # libclang wants it to be in a directory, so make one and symlink
     args.td = tempfile.mkdtemp()
     cc_path = os.path.abspath(args.compile_commands)
-    # Add parse-all-comments to the command line for each arg
-    # so that we get all the comments in the file.
     cc = json.load(open(cc_path))
-    # for cmd in cc: cmd['arguments'].append('-fparse-all-comments')
     json.dump(cc, open(os.path.join(args.td, 'compile_commands.json'), 'w'))
     compdb = clang.cindex.CompilationDatabase.fromDirectory(args.td)
 

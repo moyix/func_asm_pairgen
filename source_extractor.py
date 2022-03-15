@@ -97,7 +97,15 @@ def tidy_args(cmd):
 def try_parse(src, compdb):
     cmds = compdb.getCompileCommands(src)
     for cmd in cmds:
-        os.chdir(cmd.directory)
+        try:
+            os.chdir(cmd.directory)
+        except FileNotFoundError:
+            # This probably won't work but it's worth a try
+            dirname = os.path.dirname(src)
+            while dirname and not os.path.exists(dirname):
+                dirname = os.path.dirname(dirname)
+            if dirname and os.path.exists(dirname):
+                os.chdir(dirname)
         args = tidy_args(cmd)
         try:
             index = clang.cindex.Index.create()
